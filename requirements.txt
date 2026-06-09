@@ -2,3 +2,5 @@ streamlit
 requests
 pandas
 textblob
+beautifulsoup4
+lxml
