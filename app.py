@@ -2,22 +2,24 @@ import streamlit as st
 import requests
 import pandas as pd
 from textblob import TextBlob
+from bs4 import BeautifulSoup
+from urllib.parse import quote
 
 st.set_page_config(
-    page_title="Social Sentiment Analyzer",
-    page_icon="📊",
+    page_title="News Sentiment Analyzer",
+    page_icon="📰",
     layout="wide"
 )
 
-st.title("📊 Social Media Sentiment Analyzer")
+st.title("📰 News Sentiment Analyzer")
 
 keyword = st.text_input(
-    "Keyword",
-    placeholder="contoh: wildlife conservation"
+    "Masukkan isu",
+    placeholder="contoh: javan rhino conservation"
 )
 
 jumlah = st.slider(
-    "Jumlah posting",
+    "Jumlah berita",
     10,
     100,
     30
@@ -26,62 +28,51 @@ jumlah = st.slider(
 if st.button("Analyze"):
 
     if not keyword:
-        st.warning("Masukkan keyword")
+        st.warning("Masukkan keyword terlebih dahulu")
         st.stop()
 
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
-
-    url = (
-        f"https://www.reddit.com/search.json"
-        f"?q={keyword}&limit={jumlah}"
+    rss_url = (
+        "https://news.google.com/rss/search?q="
+        + quote(keyword)
+        + "&hl=en-US&gl=US&ceid=US:en"
     )
 
     try:
 
-        r = requests.get(
-            url,
-            headers=headers,
+        response = requests.get(
+            rss_url,
             timeout=20
         )
 
-        if r.status_code != 200:
+        if response.status_code != 200:
 
             st.error(
-                f"Gagal mengambil data ({r.status_code})"
+                f"Gagal mengambil RSS ({response.status_code})"
             )
 
             st.stop()
 
-        posts = r.json()["data"]["children"]
+        soup = BeautifulSoup(
+            response.content,
+            "xml"
+        )
+
+        items = soup.find_all("item")
 
         data = []
 
         positif = 0
-        negatif = 0
         netral = 0
+        negatif = 0
 
-        for post in posts:
+        for item in items[:jumlah]:
 
-            p = post["data"]
+            title = item.title.text
 
-            title = p.get(
-                "title",
-                ""
-            )
-
-            text = p.get(
-                "selftext",
-                ""
-            )
-
-            full_text = (
-                title + " " + text
-            )
+            link = item.link.text
 
             score = TextBlob(
-                full_text
+                title
             ).sentiment.polarity
 
             if score > 0.1:
@@ -100,47 +91,31 @@ if st.button("Analyze"):
                 netral += 1
 
             data.append({
-
                 "Title": title,
-
-                "Score": round(
-                    score,
-                    3
-                ),
-
                 "Sentiment": sentiment,
-
-                "URL": (
-                    "https://reddit.com"
-                    + p.get(
-                        "permalink",
-                        ""
-                    )
-                )
-
+                "Score": round(score, 3),
+                "Link": link
             })
 
-        df = pd.DataFrame(
-            data
-        )
+        df = pd.DataFrame(data)
 
         st.success(
-            f"{len(df)} posting ditemukan"
+            f"Ditemukan {len(df)} berita"
         )
 
-        col1, col2, col3 = st.columns(3)
+        c1, c2, c3 = st.columns(3)
 
-        col1.metric(
+        c1.metric(
             "Positive",
             positif
         )
 
-        col2.metric(
+        c2.metric(
             "Neutral",
             netral
         )
 
-        col3.metric(
+        c3.metric(
             "Negative",
             negatif
         )
@@ -148,6 +123,29 @@ if st.button("Analyze"):
         st.dataframe(
             df,
             use_container_width=True
+        )
+
+        st.subheader(
+            "Sentiment Distribution"
+        )
+
+        chart_df = pd.DataFrame({
+            "Sentiment": [
+                "Positive",
+                "Neutral",
+                "Negative"
+            ],
+            "Count": [
+                positif,
+                netral,
+                negatif
+            ]
+        })
+
+        st.bar_chart(
+            chart_df.set_index(
+                "Sentiment"
+            )
         )
 
         csv = df.to_csv(
@@ -159,7 +157,7 @@ if st.button("Analyze"):
         st.download_button(
             "⬇ Download CSV",
             csv,
-            "sentiment_results.csv",
+            f"{keyword}_sentiment.csv",
             "text/csv"
         )
 
